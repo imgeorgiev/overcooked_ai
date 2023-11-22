@@ -9,7 +9,7 @@ import dill
 import gym
 import numpy as np
 import ray
-from ray.rllib.agents.ppo import PPOTrainer
+from ray.rllib.algorithms.ppo import PPO
 from ray.rllib.algorithms.callbacks import DefaultCallbacks
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from ray.rllib.models import ModelCatalog
@@ -47,7 +47,7 @@ class RlLibAgent(Agent):
         self.agent_index = agent_index
         self.featurize = featurize_fn
 
-    def reset(self):
+    def reset(self, seed=0, options=None):
         # Get initial rnn states and add batch dimension to each
         if hasattr(self.policy.model, "get_initial_state"):
             self.rnn_state = [
@@ -167,9 +167,10 @@ class OvercookedMultiAgent(MultiAgentEnv):
         self.base_env = base_env
         # since we are not passing featurize_fn in as an argument, we create it here and check its validity
         self.featurize_fn_map = {
-            "ppo": lambda state: self.base_env.lossless_state_encoding_mdp(
-                state
-            ),
+            # "ppo": lambda state: self.base_env.lossless_state_encoding_mdp(
+            #     state
+            # ),
+            "ppo": lambda state: self.base_env.featurize_state_mdp(state),
             "bc": lambda state: self.base_env.featurize_state_mdp(state),
         }
         self._validate_featurize_fns(self.featurize_fn_map)
@@ -178,7 +179,7 @@ class OvercookedMultiAgent(MultiAgentEnv):
         self.reward_shaping_horizon = reward_shaping_horizon
         self.use_phi = use_phi
         self.anneal_bc_factor(0)
-        self._agent_ids = set(self.reset().keys())
+        self._agent_ids = set(self.reset()[0].keys())
         # fixes deprecation warnings
         self._spaces_in_preferred_format = True
 
@@ -225,13 +226,11 @@ class OvercookedMultiAgent(MultiAgentEnv):
     def _setup_observation_space(self, agents):
         dummy_state = self.base_env.mdp.get_standard_start_state()
         # ppo observation
-        featurize_fn_ppo = (
-            lambda state: self.base_env.lossless_state_encoding_mdp(state)
-        )
+        featurize_fn_ppo = lambda state: self.base_env.featurize_state_mdp(state)
         obs_shape = featurize_fn_ppo(dummy_state)[0].shape
 
-        high = np.ones(obs_shape) * float("inf")
-        low = np.ones(obs_shape) * 0
+        high = np.ones(obs_shape) * 100
+        low = np.ones(obs_shape) * -100
         self.ppo_observation_space = gym.spaces.Box(
             np.float32(low), np.float32(high), dtype=np.float32
         )
@@ -257,9 +256,10 @@ class OvercookedMultiAgent(MultiAgentEnv):
 
     def _get_featurize_fn(self, agent_id):
         if agent_id.startswith("ppo"):
-            return lambda state: self.base_env.lossless_state_encoding_mdp(
-                state
-            )
+            # return lambda state: self.base_env.lossless_state_encoding_mdp(
+            #     state
+            # )
+            return lambda state: self.base_env.featurize_state_mdp(state)
         if agent_id.startswith("bc"):
             return lambda state: self.base_env.featurize_state_mdp(state)
         raise ValueError("Unsupported agent type {0}".format(agent_id))
@@ -352,10 +352,15 @@ class OvercookedMultiAgent(MultiAgentEnv):
             self.curr_agents[1]: done,
             "__all__": done,
         }
+        trunc = {
+            self.curr_agents[0]: np.zeros_like(done),
+            self.curr_agents[1]: np.zeros_like(done),
+            "__all__": np.zeros_like(done),
+        }
         infos = {self.curr_agents[0]: info, self.curr_agents[1]: info}
-        return obs, rewards, dones, infos
+        return obs, rewards, dones, trunc, infos
 
-    def reset(self, regen_mdp=True):
+    def reset(self, regen_mdp=True, seed=0, options=None):
         """
         When training on individual maps, we want to randomize which agent is assigned to which
         starting location, in order to make sure that the agents are trained to be able to
@@ -367,7 +372,8 @@ class OvercookedMultiAgent(MultiAgentEnv):
         self.base_env.reset(regen_mdp)
         self.curr_agents = self._populate_agents()
         ob_p0, ob_p1 = self._get_obs(self.base_env.state)
-        return {self.curr_agents[0]: ob_p0, self.curr_agents[1]: ob_p1}
+        info = {}
+        return {self.curr_agents[0]: ob_p0, self.curr_agents[1]: ob_p1}, info
 
     def anneal_reward_shaping_factor(self, timesteps):
         """
@@ -475,7 +481,8 @@ class TrainingCallbacks(DefaultCallbacks):
         # Get rllib.OvercookedMultiAgentEnv refernce from rllib wraper
         env = base_env.get_sub_environments()[0]
         # Both agents share the same info so it doesn't matter whose we use, just use 0th agent's
-        info_dict = episode.last_info_for(env.curr_agents[0])
+        # info_dict = episode.last_info_for(env.curr_agents[0])
+        info_dict = episode._last_infos.get(env.curr_agents[0], {})
 
         ep_info = info_dict["episode"]
         game_stats = ep_info["ep_game_stats"]
@@ -632,12 +639,14 @@ def evaluate(
     agent_0_featurize_fn = (
         agent_0_featurize_fn
         if agent_0_featurize_fn
-        else evaluator.env.lossless_state_encoding_mdp
+        # else evaluator.env.lossless_state_encoding_mdp
+        else evaluator.env.featurize_state_mdp
     )
     agent_1_featurize_fn = (
         agent_1_featurize_fn
         if agent_1_featurize_fn
-        else evaluator.env.lossless_state_encoding_mdp
+        # else evaluator.env.lossless_state_encoding_mdp
+        else evaluator.env.featurize_state_mdp
     )
 
     # Wrap rllib policies in overcooked agents to be compatible with Evaluator code
@@ -780,7 +789,7 @@ def gen_trainer_from_params(params):
         environment_params["eval_mdp_params"] = environment_params[
             "mdp_params"
         ]
-    trainer = PPOTrainer(
+    trainer = PPO(
         env="overcooked_multi_agent",
         config={
             "multiagent": multi_agent_config,

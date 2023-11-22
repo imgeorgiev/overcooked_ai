@@ -50,6 +50,7 @@ setup(
         "opencv-python",
     ],
     # removed overlapping dependencies
+    # dependencies adopted for Apple Silicon
     extras_require={
         "harl": [
             "wandb",
@@ -60,9 +61,9 @@ setup(
             "matplotlib",
             "requests",
             "seaborn==0.9.0",
-            "ray[rllib]==2.0.0",
+            "ray[rllib]==2.3.*",
             "protobuf",
-            "tensorflow==2.10",
+            "tensorflow>=2.13.1",
         ]
     },
     entry_points={

@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+src/human_aware_rl/ppo/
+
 # C extensions
 *.so
 

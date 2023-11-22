@@ -167,3 +167,11 @@ The raw data used in training is >100 MB, which makes it inconvenient to distrib
 
 If you have issues or questions, don't hesitate to contact [Micah Carroll](https://micahcarroll.github.io) at mdc@berkeley.edu.
 
+## Apple Silicon support
+
+```
+pip install -e .[harl]
+pip uninstall grpcio
+conda install 'grpcio==1.51.*' -c conda-forge
+```
+

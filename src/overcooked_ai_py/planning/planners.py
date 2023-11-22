@@ -27,6 +27,7 @@ SAFE_RUN = False
 NO_COUNTERS_PARAMS = {
     "start_orientations": False,
     "wait_allowed": False,
+    # "counter_goals": [(2,2)],
     "counter_goals": [],
     "counter_drop": [],
     "counter_pickup": [],

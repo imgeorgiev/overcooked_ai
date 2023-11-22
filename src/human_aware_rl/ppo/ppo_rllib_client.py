@@ -37,7 +37,7 @@ if os.path.exists("slack.json") and not LOCAL_TESTING:
 # Note: tensorflow and tensorflow dependent imports must also come after rllib imports
 # This is because rllib disables eager execution. Otherwise, it must be manually disabled
 import ray
-from ray.rllib.agents.ppo.ppo import PPOTrainer
+# from ray.rllib.agents.ppo.ppo import PPOTrainer
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from ray.tune.result import DEFAULT_RESULTS_DIR
@@ -93,7 +93,7 @@ def my_config():
     NUM_HIDDEN_LAYERS = 3
     SIZE_HIDDEN_LAYERS = 64
     NUM_FILTERS = 25
-    NUM_CONV_LAYERS = 3
+    NUM_CONV_LAYERS = 0
 
     # LSTM memory cell size (only used if use_lstm=True)
     CELL_SIZE = 256
@@ -102,7 +102,7 @@ def my_config():
     D2RL = False
     ### Training Params ###
 
-    num_workers = 30 if not LOCAL_TESTING else 2
+    num_workers = 4
 
     # list of all random seeds to use for experiments, used to reproduce results
     seeds = [0]
@@ -111,7 +111,7 @@ def my_config():
     seed = None
 
     # Number of gpus the central driver should use
-    num_gpus = 0 if LOCAL_TESTING else 1
+    num_gpus = 0
 
     # How many environment timesteps will be simulated (across all environments)
     # for one set of gradient updates. Is divided equally across environments
@@ -128,16 +128,16 @@ def my_config():
     shared_policy = True
 
     # Number of training iterations to run
-    num_training_iters = 420 if not LOCAL_TESTING else 2
+    num_training_iters = 600
 
     # Stepsize of SGD.
-    lr = 5e-5
+    lr = 5e-4
 
     # Learning rate schedule.
     lr_schedule = None
 
     # If specified, clip the global norm of gradients by this amount
-    grad_clip = 0.1
+    grad_clip = 0.2
 
     # Discount factor
     gamma = 0.99
@@ -150,7 +150,7 @@ def my_config():
     vf_share_layers = True
 
     # How much the loss of the value network is weighted in overall loss
-    vf_loss_coeff = 1e-4
+    vf_loss_coeff = 1e-2
 
     # Entropy bonus coefficient, will anneal linearly from _start to _end over _horizon steps
     entropy_coeff_start = 0.2
@@ -161,7 +161,7 @@ def my_config():
     kl_coeff = 0.2
 
     # PPO clipping factor
-    clip_param = 0.05
+    clip_param = 0.15
 
     # Number of SGD iterations in each outer loop (i.e., number of epochs to
     # execute per train batch).
@@ -229,7 +229,7 @@ def my_config():
         "SOUP_DISTANCE_REW": 0,
     }
     # whether to start cooking automatically when pot has 3 items in it
-    old_dynamics = False
+    old_dynamics = True
 
     # Max episode length
     horizon = 400
@@ -259,6 +259,7 @@ def my_config():
 
     # to be passed into the rllib.PPOTrainer class
     training_params = {
+        "framework": "tf",
         "num_workers": num_workers,
         "train_batch_size": train_batch_size,
         "sgd_minibatch_size": sgd_minibatch_size,
@@ -388,18 +389,14 @@ def main(params):
     del params["seeds"]
 
     # this is required if we want to pass schedules in as command-line args, and we need to pass the string as a list of tuples
-    bc_schedule = params["environment_params"]["multi_agent_params"][
-        "bc_schedule"
-    ]
+    bc_schedule = params["environment_params"]["multi_agent_params"]["bc_schedule"]
     if not isinstance(bc_schedule[0], list):
         tuples_lst = []
         for i in range(0, len(bc_schedule), 2):
             x = int(bc_schedule[i].strip("("))
             y = int(bc_schedule[i + 1].strip(")"))
             tuples_lst.append((x, y))
-        params["environment_params"]["multi_agent_params"][
-            "bc_schedule"
-        ] = tuples_lst
+        params["environment_params"]["multi_agent_params"]["bc_schedule"] = tuples_lst
 
     # List to store results dicts (to be passed to sacred slack observer)
     results = []
@@ -417,9 +414,7 @@ def main(params):
     average_sparse_reward = np.mean(
         [res["custom_metrics"]["sparse_reward_mean"] for res in results]
     )
-    average_episode_reward = np.mean(
-        [res["episode_reward_mean"] for res in results]
-    )
+    average_episode_reward = np.mean([res["episode_reward_mean"] for res in results])
     return {
         "average_sparse_reward": average_sparse_reward,
         "average_total_reward": average_episode_reward,

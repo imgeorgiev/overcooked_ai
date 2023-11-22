@@ -3,7 +3,6 @@ import tensorflow as tf
 from ray.rllib.models.tf.recurrent_net import RecurrentNetwork
 from ray.rllib.models.tf.tf_modelv2 import TFModelV2
 
-
 class RllibPPOModel(TFModelV2):
     """
     Model that will map environment states to action probabilities. Will be shared across agents
@@ -77,6 +76,8 @@ class RllibPPOModel(TFModelV2):
         value_out = tf.keras.layers.Dense(1)(out)
 
         self.base_model = tf.keras.Model(self.inputs, [layer_out, value_out])
+
+        print(self.base_model.summary())
 
     def forward(self, input_dict, state=None, seq_lens=None):
         model_out, self._value_out = self.base_model(input_dict["obs"])
